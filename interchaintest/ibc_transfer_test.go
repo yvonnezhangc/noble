@@ -91,14 +91,13 @@ func TestIBCTransfer(t *testing.T) {
 	require.NoError(t, err, "failed to execute configure minter controller tx")
 
 	_, err = nobleValidator.ExecTx(ctx, gw.fiatTfRoles.MinterController.KeyName(),
-		"fiat-tokenfactory", "configure-minter", gw.fiatTfRoles.Minter.FormattedAddress(), "1000000000000"+denomMetadataUsdc.Base, "-b", "block",
+		"fiat-tokenfactory", "configure-minter", gw.fiatTfRoles.Minter.FormattedAddress(), "2000000000000"+denomMetadataUsdc.Base, "-b", "block",
 	)
 	require.NoError(t, err, "failed to execute configure minter tx")
 
 	mintToWallet(t, ctx, noble, gw, gw.extraWallets.User)
 	mintToWallet(t, ctx, noble, gw, gw.extraWallets.User2)
 
-	
 	nobleChans, err := r.GetChannels(ctx, eRep, noble.Config().ChainID)
 	require.NoError(t, err, "failed to get noble channels")
 	require.Len(t, nobleChans, 1, "more than one channel found")
@@ -112,7 +111,6 @@ func TestIBCTransfer(t *testing.T) {
 
 	height, err := noble.Height(ctx)
 	require.NoError(t, err, "failed to get noble height")
-
 
 	_, err = nobleValidator.ExecTx(ctx, gw.fiatTfRoles.MasterMinter.KeyName(),
 		"fiat-tokenfactory", "configure-minter-controller", gw.fiatTfRoles.MinterController.FormattedAddress(), gw.fiatTfRoles.Minter.FormattedAddress(), "-b", "block",
