@@ -116,6 +116,17 @@ func TestIBCTransfer(t *testing.T) {
 	height, err := noble.Height(ctx)
 	require.NoError(t, err, "failed to get noble height")
 
+
+	_, err = nobleValidator.ExecTx(ctx, gw.fiatTfRoles.MasterMinter.KeyName(),
+		"fiat-tokenfactory", "configure-minter-controller", gw.fiatTfRoles.MinterController.FormattedAddress(), gw.fiatTfRoles.Minter.FormattedAddress(), "-b", "block",
+	)
+	require.NoError(t, err, "failed to execute configure minter controller tx")
+
+	_, err = nobleValidator.ExecTx(ctx, gw.fiatTfRoles.Blacklister.KeyName(),
+		"fiat-tokenfactory", "blacklist", gaiaReceiver, "-b", "block",
+	)
+	require.NoError(t, err, "failed to blacklist user address")
+
 	tx, err := noble.SendIBCTransfer(ctx, nobleChan.ChannelID, gw.extraWallets.User.KeyName(), ibc.WalletAmount{
 		Address: gaiaReceiver,
 		Denom:   denomMetadataUsdc.Base,
