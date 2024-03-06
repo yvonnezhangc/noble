@@ -126,10 +126,7 @@ func TestIBCTransfer(t *testing.T) {
 	tx, err := testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User, gaiaReceiver, gw.extraWallets.User2)
 	require.Error(t, err, "failed to block IBC transfer from blacklisted sender")
 
-	userBech32Addr := sdk.MustBech32ifyAddressBytes("noble", gw.extraWallets.User.Address())
-	rawUserGaiaAddr, err := sdk.GetFromBech32(userBech32Addr, "cosmos")
-	require.NoError(t, err, "failed to calculate user gaia address")
-	userGaiaAddr := sdk.AccAddress(rawUserGaiaAddr).String()
+	userGaiaAddr := sdk.MustBech32ifyAddressBytes("cosmos", gw.extraWallets.User.Address())
 	tx, err = testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User2, userGaiaAddr, gw.extraWallets.Alice)
 	require.Error(t, err, "failed to block IBC transfer to blacklisted receiver")
 
