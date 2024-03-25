@@ -49,7 +49,7 @@ func TestIBCTransfer(t *testing.T) {
 	chains, err := cf.Chains(t.Name())
 	require.NoError(t, err)
 
-	r := interchaintest.NewBuiltinRelayerFactory(
+	rly := interchaintest.NewBuiltinRelayerFactory(
 		ibc.CosmosRly,
 		zaptest.NewLogger(t),
 		relayerImage,
@@ -64,12 +64,12 @@ func TestIBCTransfer(t *testing.T) {
 	ic := interchaintest.NewInterchain().
 		AddChain(noble).
 		AddChain(gaia).
-		AddRelayer(r, "relayer").
+		AddRelayer(rly, "relayer").
 		AddLink(interchaintest.InterchainLink{
 			Chain1:  noble,
 			Chain2:  gaia,
 			Path:    path,
-			Relayer: r,
+			Relayer: rly,
 		})
 
 	require.NoError(t, ic.Build(ctx, eRep, interchaintest.InterchainBuildOptions{
@@ -82,6 +82,11 @@ func TestIBCTransfer(t *testing.T) {
 	t.Cleanup(func() {
 		_ = ic.Close()
 	})
+
+	rly.StartRelayer(ctx, eRep, path)
+
+	gaiaWallets := interchaintest.GetAndFundTestUsers(t, ctx, "gaia", 1_000_000, gaia)
+	gaiaWallet := gaiaWallets[0]
 
 	nobleValidator := noble.Validators[0]
 
@@ -98,16 +103,12 @@ func TestIBCTransfer(t *testing.T) {
 	mintToWallet(t, ctx, noble, gw, gw.extraWallets.User)
 	mintToWallet(t, ctx, noble, gw, gw.extraWallets.User2)
 
-	nobleChans, err := r.GetChannels(ctx, eRep, noble.Config().ChainID)
+	nobleChans, err := rly.GetChannels(ctx, eRep, noble.Config().ChainID)
 	require.NoError(t, err, "failed to get noble channels")
 	require.Len(t, nobleChans, 1, "more than one channel found")
 	nobleChan := nobleChans[0]
 
-	gaiaReceiver := "cosmos169xaqmxumqa829gg73nxrenkhhd2mrs36j3vrz"
-
-	err = r.StartRelayer(ctx, eRep, path)
-	require.NoError(t, err, "failed to start relayer")
-	defer r.StopRelayer(ctx, eRep)
+	gaiaReceiver := gaiaWallet.FormattedAddress()
 
 	height, err := noble.Height(ctx)
 	require.NoError(t, err, "failed to get noble height")
@@ -123,14 +124,14 @@ func TestIBCTransfer(t *testing.T) {
 	)
 	require.NoError(t, err, "failed to blacklist user address")
 
-	tx, err := testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User, gaiaReceiver, gw.extraWallets.User2)
+	_, err = testAuthzIBCTransfer(t, ctx, noble, nobleChan, gw.extraWallets.User, gaiaReceiver, gw.extraWallets.User2)
 	require.Error(t, err, "failed to block IBC transfer from blacklisted sender")
 
 	userGaiaAddr := sdk.MustBech32ifyAddressBytes("cosmos", gw.extraWallets.User.Address())
-	tx, err = testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User2, userGaiaAddr, gw.extraWallets.Alice)
+	_, err = testAuthzIBCTransfer(t, ctx, noble, nobleChan, gw.extraWallets.User2, userGaiaAddr, gw.extraWallets.Alice)
 	require.Error(t, err, "failed to block IBC transfer to blacklisted receiver")
 
-	tx, err = testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User2, gaiaReceiver, gw.extraWallets.User)
+	_, err = testAuthzIBCTransfer(t, ctx, noble, nobleChan, gw.extraWallets.User2, gaiaReceiver, gw.extraWallets.User)
 	require.Error(t, err, "failed to block IBC transfer initiated by a blacklisted grantee")
 
 	// unblacklist user
@@ -145,7 +146,7 @@ func TestIBCTransfer(t *testing.T) {
 	)
 	require.NoError(t, err, "failed to pause")
 
-	tx, err = testAuthzTransfer(t, ctx, noble, gw, denomMetadataUsdc.Base, nobleChan, gw.extraWallets.User, gaiaReceiver, gw.extraWallets.User2)
+	_, err = testAuthzIBCTransfer(t, ctx, noble, nobleChan, gw.extraWallets.User, gaiaReceiver, gw.extraWallets.User2)
 	require.Error(t, err, "failed to block IBC transfer when asset is paused")
 
 	// Unpause asset
@@ -155,7 +156,7 @@ func TestIBCTransfer(t *testing.T) {
 	require.NoError(t, err, "failed to unpause")
 
 	// Test successful transfer
-	tx, err = noble.SendIBCTransfer(ctx, nobleChan.ChannelID, gw.extraWallets.User.KeyName(), ibc.WalletAmount{
+	tx, err := noble.SendIBCTransfer(ctx, nobleChan.ChannelID, gw.extraWallets.User.KeyName(), ibc.WalletAmount{
 		Address: gaiaReceiver,
 		Denom:   denomMetadataUsdc.Base,
 		Amount:  100000000,
@@ -177,34 +178,44 @@ func TestIBCTransfer(t *testing.T) {
 	receiverBalance, err := gaia.GetBalance(ctx, gaiaReceiver, ibcDenom)
 	require.NoError(t, err, "failed to get receiver balance")
 	require.Equal(t, int64(99990000), receiverBalance, "receiver balance incorrect")
+
+
+	userBalBefore, _ := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
+
+	_, err = gaia.SendIBCTransfer(ctx, nobleChan.Counterparty.ChannelID, gaiaWallet.KeyName(), ibc.WalletAmount{
+		Address: gw.extraWallets.User.FormattedAddress(),
+		Denom:   ibcDenom,
+		Amount:  10,
+	}, ibc.TransferOptions{})
+	require.NoError(t, err, "failed to send ibc transfer")
+
+	require.NoError(t, testutil.WaitForBlocks(ctx, 10, noble, gaia))
+
+	userBalAfter, _ := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
+	require.Equal(t, userBalBefore+10, userBalAfter, "User wallet balance should have increased")
 }
 
 func mintToWallet(t *testing.T, ctx context.Context, noble *cosmos.CosmosChain, gw genesisWrapper, user ibc.Wallet) {
 	nobleValidator := noble.Validators[0]
 	_, err := nobleValidator.ExecTx(ctx, gw.fiatTfRoles.Minter.KeyName(),
-		"fiat-tokenfactory", "mint", user.FormattedAddress(), "1000000000000"+denomMetadataUsdc.Base, "-b", "block",
+		"fiat-tokenfactory", "mint", user.FormattedAddress(), fmt.Sprintf("%d%s", 1000000000000, denomMetadataUsdc.Base), "-b", "block",
 	)
 	require.NoError(t, err, "failed to execute mint to user tx")
 
-	userBalance := getBalance(t, ctx, denomMetadataUsdc.Base, noble, user)
+	userBalance, err := noble.GetBalance(ctx, user.FormattedAddress(), denomMetadataUsdc.Base)
+	require.NoError(t, err, "failed to get user balance")
+	
 	require.Equalf(t, int64(1000000000000), userBalance, "failed to mint %s to user", denomMetadataUsdc.Base)
 }
 
-func testAuthzTransfer(t *testing.T, ctx context.Context, noble *cosmos.CosmosChain, gw genesisWrapper, mintingDenom string, nobleChan ibc.ChannelOutput, fromWallet ibc.Wallet, receiver string, granteeWallet ibc.Wallet)  (ibc.Tx, error) {
+func testAuthzIBCTransfer(t *testing.T, ctx context.Context, noble *cosmos.CosmosChain, nobleChan ibc.ChannelOutput, fromWallet ibc.Wallet, receiver string, granteeWallet ibc.Wallet)  (string, error) {
 	nobleValidator := noble.Validators[0]
 	
-	_, err := nobleValidator.ExecTx(ctx, fromWallet.KeyName(), "authz", "grant", granteeWallet.FormattedAddress(), "send", "--spend-limit", fmt.Sprintf("%d%s", 100, mintingDenom))
+	_, err := nobleValidator.ExecTx(ctx, fromWallet.KeyName(), "authz", "grant", granteeWallet.FormattedAddress(), "generic")
 	require.NoError(t, err, "failed to grant permissions")
 
-	return noble.SendIBCTransfer(ctx, nobleChan.ChannelID, gw.extraWallets.User.KeyName(), ibc.WalletAmount{
-		Address: receiver,
-		Denom:   denomMetadataUsdc.Base,
-		Amount:  100,
-	}, ibc.TransferOptions{})
-}
+	bz, _, _ := nobleValidator.ExecBin(ctx, "tx", "ibc-transfer", "transfer", nobleChan.ChannelID, receiver, fmt.Sprintf("%d%s", 100, denomMetadataUsdc.Base), "--chain-id", noble.Config().ChainID, "--generate-only")
+	_ = nobleValidator.WriteFile(ctx, bz, "tx.json")
 
-func getBalance(t *testing.T, ctx context.Context, mintingDenom string, noble *cosmos.CosmosChain, wallet ibc.Wallet) int64 {
-	bal, err := noble.GetBalance(ctx, wallet.FormattedAddress(), mintingDenom)
-	require.NoError(t, err, "failed to get user balance")
-	return bal
+	return nobleValidator.ExecTx(ctx, granteeWallet.KeyName(), "authz", "exec", "/var/cosmos-chain/noble-1/tx.json")
 }
