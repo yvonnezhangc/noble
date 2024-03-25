@@ -153,18 +153,6 @@ func (im IBCMiddleware) OnRecvPacket(
 			ackErr = sdkerrors.Wrapf(sdkerrors.ErrUnauthorized, "receiver address is blacklisted")
 			return channeltypes.NewErrorAcknowledgement(ackErr)
 		}
-
-		_, addressBz, err = bech32.DecodeAndConvert(data.Sender)
-		if err != nil {
-			return channeltypes.NewErrorAcknowledgement(err)
-		}
-
-		_, found = im.fiatKeeper.GetBlacklisted(ctx, addressBz)
-		if found {
-			ackErr = sdkerrors.Wrapf(sdkerrors.ErrUnauthorized, "sender address is blacklisted")
-			return channeltypes.NewErrorAcknowledgement(ackErr)
-		}
-
 	}
 	return im.app.OnRecvPacket(ctx, packet, relayer)
 
