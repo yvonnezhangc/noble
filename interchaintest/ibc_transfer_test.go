@@ -134,7 +134,7 @@ func TestIBCTransfer(t *testing.T) {
 
 	userBalance, err := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
 	require.NoError(t, err, "failed to get user balance")
-	require.Equal(t, userBalBefore+10, userBalance, "user balance is incorrect")
+	require.Equal(t, userBalBefore-10, userBalance, "user balance is incorrect")
 
 	prefixedDenom := transfertypes.GetPrefixedDenom(nobleChan.Counterparty.PortID, nobleChan.Counterparty.ChannelID, denomMetadataUsdc.Base)
 	denomTrace := transfertypes.ParseDenomTrace(prefixedDenom)
