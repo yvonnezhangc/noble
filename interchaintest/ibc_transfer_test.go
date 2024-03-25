@@ -86,6 +86,7 @@ func TestIBCTransfer(t *testing.T) {
 	gaiaWallet := gaiaWallets[0]
 
 	nobleValidator := noble.Validators[0]
+	err = rly.StartRelayer(ctx, eRep, path)
 
 	_, err = nobleValidator.ExecTx(ctx, gw.fiatTfRoles.MasterMinter.KeyName(),
 		"fiat-tokenfactory", "configure-minter-controller", gw.fiatTfRoles.MinterController.FormattedAddress(), gw.fiatTfRoles.Minter.FormattedAddress(), "-b", "block",
@@ -115,9 +116,6 @@ func TestIBCTransfer(t *testing.T) {
 	)
 	require.NoError(t, err, "failed to execute configure minter controller tx")
 
-	err = rly.StartRelayer(ctx, eRep, path)
-	require.NoError(t, err, "failed to start relayer")
-	defer rly.StopRelayer(ctx, eRep)
 
 	userBalBefore, _ := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
 
@@ -147,10 +145,6 @@ func TestIBCTransfer(t *testing.T) {
 
 
 	userBalBefore, _ = noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
-
-	err = rly.StartRelayer(ctx, eRep, path)
-	require.NoError(t, err, "failed to start relayer")
-	defer rly.StopRelayer(ctx, eRep)
 
 	_, err = gaia.SendIBCTransfer(ctx, nobleChan.Counterparty.ChannelID, gaiaWallet.KeyName(), ibc.WalletAmount{
 		Address: gw.extraWallets.User.FormattedAddress(),
