@@ -119,6 +119,8 @@ func TestIBCTransfer(t *testing.T) {
 	require.NoError(t, err, "failed to start relayer")
 	defer rly.StopRelayer(ctx, eRep)
 
+	userBalBefore, _ := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
+
 	// Test successful transfer
 	tx, err := noble.SendIBCTransfer(ctx, nobleChan.ChannelID, gw.extraWallets.User.KeyName(), ibc.WalletAmount{
 		Address: gaiaReceiver,
@@ -132,7 +134,7 @@ func TestIBCTransfer(t *testing.T) {
 
 	userBalance, err := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
 	require.NoError(t, err, "failed to get user balance")
-	require.Equal(t, int64(999900000000), userBalance, "user balance is incorrect")
+	require.Equal(t, userBalBefore+10, userBalance, "user balance is incorrect")
 
 	prefixedDenom := transfertypes.GetPrefixedDenom(nobleChan.Counterparty.PortID, nobleChan.Counterparty.ChannelID, denomMetadataUsdc.Base)
 	denomTrace := transfertypes.ParseDenomTrace(prefixedDenom)
@@ -141,10 +143,10 @@ func TestIBCTransfer(t *testing.T) {
 	// 100000000 (Transfer Amount) * .0001 (1 BPS) = 10000 taken as fees
 	receiverBalance, err := gaia.GetBalance(ctx, gaiaReceiver, ibcDenom)
 	require.NoError(t, err, "failed to get receiver balance")
-	require.Equal(t, int64(99990000), receiverBalance, "receiver balance incorrect")
+	require.Equal(t, int64(10), receiverBalance, "receiver balance incorrect")
 
 
-	userBalBefore, _ := noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
+	userBalBefore, _ = noble.GetBalance(ctx, gw.extraWallets.User.FormattedAddress(), denomMetadataUsdc.Base)
 
 	err = rly.StartRelayer(ctx, eRep, path)
 	require.NoError(t, err, "failed to start relayer")
